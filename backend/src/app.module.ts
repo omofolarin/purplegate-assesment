@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ReconcileModule } from './reconcile/reconcile.module';
-
+import { TransactionsModule } from './transactions/transactions.module';
 @Module({
-  imports: [ReconcileModule],
+  imports: [ReconcileModule, TransactionsModule],
 })
-export class AppModule {}
+export class AppModule { }
