@@ -14,10 +14,14 @@ interface Transaction {
 export class ReconcileService {
   async processCsvs(systemAPath: string, systemBPath: string) {
     // Parse both CSVs
-    const [mapA, mapB] = await Promise.all([
+    const [resultA, resultB] = await Promise.all([
       this.parseCsvToMap(systemAPath),
       this.parseCsvToMap(systemBPath),
     ]);
+    const mapA = resultA.map;
+    const mapB = resultB.map;
+    const invalidRowsA = resultA.invalidRows;
+    const invalidRowsB = resultB.invalidRows;
 
     // Find missing in A and B
     const missingInA = [];
@@ -56,18 +60,58 @@ export class ReconcileService {
       missing_in_b: missingInB,
       amount_mismatches: amountMismatches,
       status_mismatches: statusMismatches,
+      invalid_rows: {
+        systemA: invalidRowsA,
+        systemB: invalidRowsB,
+      },
     };
   }
 
-  private parseCsvToMap(filePath: string): Promise<Map<string, Transaction>> {
+  private static readonly ALLOWED_STATUSES = ['SUCCESS', 'FAILED'];
+
+  private isValidISODate(dateStr: string): boolean {
+    if (!dateStr || typeof dateStr !== 'string') return false;
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime()) && dateStr === date.toISOString();
+  }
+
+  private validateTransactionRecord(record: any): string[] {
+    const errors: string[] = [];
+    if (!record.transactionId || typeof record.transactionId !== 'string') {
+      errors.push('Missing or invalid transactionId');
+    }
+    if (!record.timestamp || !this.isValidISODate(record.timestamp)) {
+      errors.push('Missing or invalid timestamp');
+    }
+    const amount = typeof record.amount === 'string' ? parseFloat(record.amount) : record.amount;
+    if (isNaN(amount)) {
+      errors.push('Missing or invalid amount');
+    }
+    if (!record.currency || typeof record.currency !== 'string') {
+      errors.push('Missing or invalid currency');
+    }
+    if (!ReconcileService.ALLOWED_STATUSES.includes(record.status)) {
+      errors.push('Missing or invalid status');
+    }
+    return errors;
+  }
+
+  private parseCsvToMap(filePath: string): Promise<{
+    map: Map<string, Transaction>,
+    invalidRows: Array<{ row: any, errors: string[] }>
+  }> {
     return new Promise((resolve, reject) => {
       const map = new Map<string, Transaction>();
+      const invalidRows: Array<{ row: any, errors: string[] }> = [];
       fs.createReadStream(filePath)
         .pipe(csv.parse({ headers: true, ignoreEmpty: true, trim: true }))
         .on('error', reject)
         .on('data', (row: any) => {
-          // Validate required fields
-          if (!row.transactionId || !row.amount || !row.status) return;
+          const errors = this.validateTransactionRecord(row);
+          if (errors.length > 0) {
+            invalidRows.push({ row, errors });
+            return;
+          }
           map.set(row.transactionId, {
             transactionId: row.transactionId,
             amount: Number(row.amount),
@@ -76,7 +120,7 @@ export class ReconcileService {
             currency: row.currency,
           });
         })
-        .on('end', () => resolve(map));
+        .on('end', () => resolve({ map, invalidRows }));
     });
   }
 }

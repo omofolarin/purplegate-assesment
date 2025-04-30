@@ -36,7 +36,7 @@ export class ReconcileController {
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
     })
   )
-  async reconcile(@UploadedFiles() files: Express.Multer.File[]) {
+  async reconcile(@UploadedFiles() files: any[]) {
     if (!files || files.length !== 2) {
       throw new HttpException('Two CSV files required (systemA, systemB)', HttpStatus.BAD_REQUEST);
     }
